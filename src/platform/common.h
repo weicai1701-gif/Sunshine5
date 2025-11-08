@@ -22,10 +22,8 @@
 #include "src/utility.h"
 #include "src/video_colorspace.h"
 
-// 关键修改：单独包含 Boost.Process 核心头文件（确保类型定义被正确引入）
-#include <boost/process/environment.hpp>
-#include <boost/process/child.hpp>
-#include <boost/process/group.hpp>
+// 关键修改：仅包含 Boost.Process 统一入口头文件（MinGW 环境下仅该文件有效，包含所有核心类型）
+#include <boost/process.hpp>
 
 extern "C" {
 #include <moonlight-common-c/src/Limelight.h>
@@ -500,13 +498,10 @@ namespace platf {
   bool
   needs_encoder_reenumeration();
 
-  // 关键修改1：直接使用 Boost 预定义的 environment 类型（已是 basic_environment<char> 的别名）
-  // 避免手动引用 basic_environment 导致的类型未定义错误
-  typedef boost::process::environment process_environment;
-
-  // 关键修改2：函数返回值和参数使用正确的 Boost.Process 类型
+  // 关键修改1：直接使用 Boost.Process 预定义类型，不手动 typedef，避免依赖 basic_environment
+  // 关键修改2：不再单独包含 child.hpp/group.hpp，仅依赖 boost/process.hpp
   boost::process::child
-  run_command(bool elevated, bool interactive, const std::string &cmd, boost::filesystem::path &working_dir, const boost::process::process_environment &env, FILE *file, std::error_code &ec, boost::process::group *group);
+  run_command(bool elevated, bool interactive, const std::string &cmd, boost::filesystem::path &working_dir, const boost::process::environment &env, FILE *file, std::error_code &ec, boost::process::group *group);
 
   enum class thread_priority_e : int {
     low,
