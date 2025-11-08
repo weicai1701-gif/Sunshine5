@@ -22,10 +22,8 @@
 #include "src/utility.h"
 #include "src/video_colorspace.h"
 
-// 新增：包含 boost::process 完整头文件，替换前向声明（解决类型不完整问题）
-#include <boost/process/child.hpp>
-#include <boost/process/group.hpp>
-#include <boost/process/environment.hpp>
+// 关键修改：替换单独组件头文件为兼容头文件（boost/process.hpp 包含 child/group/environment）
+#include <boost/process.hpp>
 
 extern "C" {
 #include <moonlight-common-c/src/Limelight.h>
@@ -38,7 +36,7 @@ struct AVFrame;
 struct AVBufferRef;
 struct AVHWFramesContext;
 
-// 仅保留非 boost::process 相关的前向声明，删除 boost::process 前向声明
+// 仅保留非 boost::process 相关的前向声明
 namespace boost {
   namespace asio {
     namespace ip {
@@ -248,13 +246,7 @@ namespace platf {
   };
 
   struct gamepad_id_t {
-    // The global index is used when looking up gamepads in the platform's
-    // gamepad array. It identifies gamepads uniquely among all clients.
     int globalIndex;
-
-    // The client-relative index is the controller number as reported by the
-    // client. It must be used when communicating back to the client via
-    // the input feedback queue.
     std::uint8_t clientRelativeIndex;
   };
 
@@ -276,9 +268,6 @@ namespace platf {
   struct gamepad_motion_t {
     gamepad_id_t id;
     std::uint8_t motionType;
-
-    // Accel: m/s^2
-    // Gyro: deg/s
     float x;
     float y;
     float z;
@@ -292,11 +281,11 @@ namespace platf {
 
   struct touch_input_t {
     std::uint8_t eventType;
-    std::uint16_t rotation;  // Degrees (0..360) or LI_ROT_UNKNOWN
+    std::uint16_t rotation;
     std::uint32_t pointerId;
     float x;
     float y;
-    float pressureOrDistance;  // Distance for hover and pressure for contact
+    float pressureOrDistance;
     float contactAreaMajor;
     float contactAreaMinor;
   };
@@ -305,11 +294,11 @@ namespace platf {
     std::uint8_t eventType;
     std::uint8_t toolType;
     std::uint8_t penButtons;
-    std::uint8_t tilt;  // Degrees (0..90) or LI_TILT_UNKNOWN
-    std::uint16_t rotation;  // Degrees (0..360) or LI_ROT_UNKNOWN
+    std::uint8_t tilt;
+    std::uint16_t rotation;
     float x;
     float y;
-    float pressureOrDistance;  // Distance for hover and pressure for contact
+    float pressureOrDistance;
     float contactAreaMajor;
     float contactAreaMinor;
   };
@@ -342,11 +331,7 @@ namespace platf {
   };
 
   struct sink_t {
-    // Play on host PC
     std::string host;
-
-    // On macOS and Windows, it is not possible to create a virtual sink
-    // Therefore, it is optional
     struct null_t {
       std::string stereo;
       std::string surround51;
@@ -357,10 +342,8 @@ namespace platf {
 
   struct encode_device_t {
     virtual ~encode_device_t() = default;
-
     virtual int
     convert(platf::img_t &img) = 0;
-
     video::sunshine_colorspace_t colorspace;
   };
 
@@ -377,24 +360,15 @@ namespace platf {
     apply_colorspace() {
     }
 
-    /**
-     * implementations must take ownership of 'frame'
-     */
     virtual int
     set_frame(AVFrame *frame, AVBufferRef *hw_frames_ctx) {
       BOOST_LOG(error) << "Illegal call to hwdevice_t::set_frame(). Did you forget to override it?";
       return -1;
     };
 
-    /**
-     * Implementations may set parameters during initialization of the hwframes context
-     */
     virtual void
     init_hwframes(AVHWFramesContext *frames) {};
 
-    /**
-     * Implementations may make modifications required before context derivation
-     */
     virtual int
     prepare_to_derive_context(int hw_device_type) {
       return 0;
@@ -404,7 +378,6 @@ namespace platf {
   struct nvenc_encode_device_t: encode_device_t {
     virtual bool
     init_encoder(const video::config_t &client_config, const video::sunshine_colorspace_t &colorspace) = 0;
-
     nvenc::nvenc_base *nvenc = nullptr;
   };
 
@@ -418,45 +391,12 @@ namespace platf {
 
   class display_t {
   public:
-    /**
-     * When display has a new image ready or a timeout occurs, this callback will be called with the image.
-     * If a frame was captured, frame_captured will be true. If a timeout occurred, it will be false.
-     *
-     * On Break Request -->
-     *    Returns false
-     *
-     * On Success -->
-     *    Returns true
-     */
     using push_captured_image_cb_t = std::function<bool(std::shared_ptr<img_t> &&img, bool frame_captured)>;
-
-    /**
-     * Use to get free image from the pool. Calls must be synchronized.
-     * Blocks until there is free image in the pool or capture is interrupted.
-     *
-     * Returns:
-     *     'true' on success, img_out contains free image
-     *     'false' when capture has been interrupted, img_out contains nullptr
-     */
     using pull_free_image_cb_t = std::function<bool(std::shared_ptr<img_t> &img_out)>;
 
     display_t() noexcept:
         offset_x { 0 }, offset_y { 0 } {}
 
-    /**
-     * push_captured_image_cb --> The callback that is called with captured image,
-     *                            must be called from the same thread as capture()
-     * pull_free_image_cb --> Capture backends call this callback to get empty image
-     *                        from the pool. If backend uses multiple threads, calls to this
-     *                        callback must be synchronized. Calls to this callback and
-     *                        push_captured_image_cb must be synchronized as well.
-     * bool *cursor --> A pointer to the flag that indicates whether the cursor should be captured as well
-     *
-     * Returns either:
-     *    capture_e::ok when stopping
-     *    capture_e::error on error
-     *    capture_e::reinit when need of reinitialization
-     */
     virtual capture_e
     capture(const push_captured_image_cb_t &push_captured_image_cb, const pull_free_image_cb_t &pull_free_image_cb, bool *cursor) = 0;
 
@@ -487,12 +427,6 @@ namespace platf {
       return false;
     }
 
-    /**
-     * @brief Checks that a given codec is supported by the display device.
-     * @param name The FFmpeg codec name (or similar for non-FFmpeg codecs).
-     * @param config The codec configuration.
-     * @return true if supported, false otherwise.
-     */
     virtual bool
     is_codec_supported(std::string_view name, const ::video::config_t &config) {
       return true;
@@ -500,24 +434,19 @@ namespace platf {
 
     virtual ~display_t() = default;
 
-    // Offsets for when streaming a specific monitor. By default, they are 0.
     int offset_x, offset_y;
     int env_width, env_height;
-
     int width, height;
 
   protected:
-    // collect capture timing data (at loglevel debug)
     stat_trackers::min_max_avg_tracker<double> sleep_overshoot_tracker;
     void
     log_sleep_overshoot(std::chrono::nanoseconds overshoot_ns) {
       if (config::sunshine.min_log_level <= 1) {
-        // Print sleep overshoot stats to debug log every 20 seconds
         auto print_info = [&](double min_overshoot, double max_overshoot, double avg_overshoot) {
           auto f = stat_trackers::one_digit_after_decimal();
           BOOST_LOG(debug) << "Sleep overshoot (min/max/avg): " << f % min_overshoot << "ms/" << f % max_overshoot << "ms/" << f % avg_overshoot << "ms";
         };
-        // std::chrono::nanoseconds overshoot_ns = std::chrono::steady_clock::now() - next_frame;
         sleep_overshoot_tracker.collect_and_callback_on_interval(overshoot_ns.count() / 1000000., print_info, 20s);
       }
     }
@@ -527,7 +456,6 @@ namespace platf {
   public:
     virtual capture_e
     sample(std::vector<std::int16_t> &frame_buffer) = 0;
-
     virtual ~mic_t() = default;
   };
 
@@ -535,13 +463,10 @@ namespace platf {
   public:
     virtual int
     set_sink(const std::string &sink) = 0;
-
     virtual std::unique_ptr<mic_t>
     microphone(const std::uint8_t *mapping, int channels, std::uint32_t sample_rate, std::uint32_t frame_size) = 0;
-
     virtual std::optional<sink_t>
     sink_info() = 0;
-
     virtual ~audio_control_t() = default;
   };
 
@@ -564,33 +489,19 @@ namespace platf {
   std::unique_ptr<audio_control_t>
   audio_control();
 
-  /**
-   * display_name --> The name of the monitor that SHOULD be displayed
-   *    If display_name is empty --> Use the first monitor that's compatible you can find
-   *    If you require to use this parameter in a separate thread --> make a copy of it.
-   *
-   * config --> Stream configuration
-   *
-   * Returns display_t based on hwdevice_type
-   */
   std::shared_ptr<display_t>
   display(mem_type_e hwdevice_type, const std::string &display_name, const video::config_t &config);
 
-  // A list of names of displays accepted as display_name with the mem_type_e
   std::vector<std::string>
   display_names(mem_type_e hwdevice_type);
 
-  /**
-   * @brief Returns if GPUs/drivers have changed since the last call to this function.
-   * @return `true` if a change has occurred or if it is unknown whether a change occurred.
-   */
   bool
   needs_encoder_reenumeration();
 
-  // 关键修改1：typedef 重命名，避免与 boost::process::v2::environment 命名冲突
+  // typedef 重命名，避免与 boost::process::v2::environment 命名冲突
   typedef boost::process::basic_environment<char> process_environment;
 
-  // 关键修改2：函数参数中的 environment 改为 process_environment，适配重命名
+  // 函数参数使用重命名后的类型
   boost::process::child
   run_command(bool elevated, bool interactive, const std::string &cmd, boost::filesystem::path &working_dir, const boost::process::process_environment &env, FILE *file, std::error_code &ec, boost::process::group *group);
 
@@ -603,7 +514,6 @@ namespace platf {
   void
   adjust_thread_priority(thread_priority_e priority);
 
-  // Allow OS-specific actions to be taken to prepare for streaming
   void
   streaming_will_start();
   void
@@ -616,7 +526,6 @@ namespace platf {
     const char *buffer;
     size_t block_size;
     size_t block_count;
-
     std::uintptr_t native_socket;
     boost::asio::ip::address &target_address;
     uint16_t target_port;
@@ -628,7 +537,6 @@ namespace platf {
   struct send_info_t {
     const char *buffer;
     size_t size;
-
     std::uintptr_t native_socket;
     boost::asio::ip::address &target_address;
     uint16_t target_port;
@@ -642,37 +550,15 @@ namespace platf {
     video
   };
 
-  /**
-   * @brief Enables QoS on the given socket for traffic to the specified destination.
-   * @param native_socket The native socket handle.
-   * @param address The destination address for traffic sent on this socket.
-   * @param port The destination port for traffic sent on this socket.
-   * @param data_type The type of traffic sent on this socket.
-   * @param dscp_tagging Specifies whether to enable DSCP tagging on outgoing traffic.
-   */
   std::unique_ptr<deinit_t>
   enable_socket_qos(uintptr_t native_socket, boost::asio::ip::address &address, uint16_t port, qos_data_type_e data_type, bool dscp_tagging);
 
-  /**
-   * @brief Open a url in the default web browser.
-   * @param url The url to open.
-   */
   void
   open_url(const std::string &url);
 
-  /**
-   * @brief Attempt to gracefully terminate a process group.
-   * @param native_handle The native handle of the process group.
-   * @return true if termination was successfully requested.
-   */
   bool
   request_process_group_exit(std::uintptr_t native_handle);
 
-  /**
-   * @brief Checks if a process group still has running children.
-   * @param native_handle The native handle of the process group.
-   * @return true if processes are still running.
-   */
   bool
   process_group_running(std::uintptr_t native_handle);
 
@@ -697,73 +583,29 @@ namespace platf {
 
   typedef deinit_t client_input_t;
 
-  /**
-   * @brief Allocates a context to store per-client input data.
-   * @param input The global input context.
-   * @return A unique pointer to a per-client input data context.
-   */
   std::unique_ptr<client_input_t>
   allocate_client_input_context(input_t &input);
 
-  /**
-   * @brief Sends a touch event to the OS.
-   * @param input The client-specific input context.
-   * @param touch_port The current viewport for translating to screen coordinates.
-   * @param touch The touch event.
-   */
   void
   touch(client_input_t *input, const touch_port_t &touch_port, const touch_input_t &touch);
 
-  /**
-   * @brief Sends a pen event to the OS.
-   * @param input The client-specific input context.
-   * @param touch_port The current viewport for translating to screen coordinates.
-   * @param pen The pen event.
-   */
   void
   pen(client_input_t *input, const touch_port_t &touch_port, const pen_input_t &pen);
 
-  /**
-   * @brief Sends a gamepad touch event to the OS.
-   * @param input The global input context.
-   * @param touch The touch event.
-   */
   void
   gamepad_touch(input_t &input, const gamepad_touch_t &touch);
 
-  /**
-   * @brief Sends a gamepad motion event to the OS.
-   * @param input The global input context.
-   * @param motion The motion event.
-   */
   void
   gamepad_motion(input_t &input, const gamepad_motion_t &motion);
 
-  /**
-   * @brief Sends a gamepad battery event to the OS.
-   * @param input The global input context.
-   * @param battery The battery event.
-   */
   void
   gamepad_battery(input_t &input, const gamepad_battery_t &battery);
 
-  /**
-   * @brief Creates a new virtual gamepad.
-   * @param input The global input context.
-   * @param id The gamepad ID.
-   * @param metadata Controller metadata from client (empty if none provided).
-   * @param feedback_queue The queue for posting messages back to the client.
-   * @return 0 on success.
-   */
   int
   alloc_gamepad(input_t &input, const gamepad_id_t &id, const gamepad_arrival_t &metadata, feedback_queue_t feedback_queue);
   void
   free_gamepad(input_t &input, int nr);
 
-  /**
-   * @brief Returns the supported platform capabilities to advertise to the client.
-   * @return Capability flags.
-   */
   platform_caps::caps_t
   get_capabilities();
 
