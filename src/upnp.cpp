@@ -2,7 +2,7 @@
  * @file src/upnp.cpp
  * @brief todo
  */
-#include <cstddef>  // 新增：解决 size_t 未声明问题
+#include <cstddef>  // 解决 size_t 未声明问题
 #include <miniupnpc/miniupnpc.h>
 #include <miniupnpc/upnpcommands.h>
 
@@ -44,7 +44,6 @@ namespace upnp {
     std::string description;
   };
 
-  // 新增 [[maybe_unused]]：忽略未使用函数警告
   [[maybe_unused]] static std::string_view
   status_string(int status) {
     switch (status) {
@@ -81,12 +80,10 @@ namespace upnp {
         { { gs_https, gs_https, "TCP"s }, "Sunshine - Client HTTPS"s },
       });
 
-      // Only map port for the Web Manager if it is configured to accept connection from WAN
       if (net::from_enum_string(config::nvhttp.origin_web_ui_allowed) > net::LAN) {
         mappings.emplace_back(mapping_t { { wm_http, wm_http, "TCP"s }, "Sunshine - Web UI"s });
       }
 
-      // Start the mapping thread
       upnp_thread = std::thread { &deinit_t::upnp_thread_proc, this };
     }
 
@@ -94,11 +91,6 @@ namespace upnp {
       upnp_thread.join();
     }
 
-    /**
-     * @brief Opens pinholes for IPv6 traffic if the IGD is capable.
-     * @details Not many IGDs support this feature, so we perform error logging with debug level.
-     * @return true if the pinholes were opened successfully.
-     */
     bool
     create_ipv6_pinholes() {
       int err;
@@ -111,8 +103,9 @@ namespace upnp {
       IGDdatas data;
       urls_t urls;
       std::array<char, INET6_ADDRESS_STRLEN> lan_addr;
-      // 修改：补充 UPNP_GetValidIGD 第6、7个参数（descURL 及长度）
-      auto status = UPNP_GetValidIGD(device.get(), &urls.el, &data, lan_addr.data(), lan_addr.size(), "", 0);
+      // 关键修改：用字符数组替代字符串常量，适配 char* 参数
+      char desc_url[] = "";  // 可修改的空字符数组，长度1（仅存'\0'）
+      auto status = UPNP_GetValidIGD(device.get(), &urls.el, &data, lan_addr.data(), lan_addr.size(), desc_url, 0);
       if (status != 1 && status != 2) {
         BOOST_LOG(debug) << "No valid IPv6 IGD: "sv << status_string(status);
         return false;
@@ -121,7 +114,6 @@ namespace upnp {
       if (data.IPv6FC.controlurl[0] != 0) {
         int firewallEnabled, pinholeAllowed;
 
-        // Check if this firewall supports IPv6 pinholes
         err = UPNP_GetFirewallStatus(urls->controlURL_6FC, data.IPv6FC.servicetype, &firewallEnabled, &pinholeAllowed);
         if (err == UPNPCOMMAND_SUCCESS) {
           BOOST_LOG(debug) << "UPnP IPv6 firewall control available. Firewall is "sv
@@ -130,7 +122,6 @@ namespace upnp {
                            << (pinholeAllowed ? "allowed"sv : "disallowed"sv);
 
           if (pinholeAllowed) {
-            // Create pinholes for each port
             auto mapping_period = std::to_string(PORT_MAPPING_LIFETIME.count());
             auto shutdown_event = mail::man->event<bool>(mail::shutdown);
 
@@ -138,7 +129,6 @@ namespace upnp {
               auto mapping = *it;
               char uniqueId[8];
 
-              // Open a pinhole for the LAN port, since there will be no WAN->LAN port mapping on IPv6
               err = UPNP_AddPinhole(urls->controlURL_6FC,
                 data.IPv6FC.servicetype,
                 "", "0",
@@ -173,14 +163,6 @@ namespace upnp {
       }
     }
 
-    /**
-     * @brief Maps a port via UPnP.
-     * @param data IGDdatas from UPNP_GetValidIGD()
-     * @param urls urls_t from UPNP_GetValidIGD()
-     * @param lan_addr Local IP address to map to
-     * @param mapping Information about port to map
-     * @return `true` on success.
-     */
     bool
     map_upnp_port(const IGDdatas &data, const urls_t &urls, const std::string &lan_addr, const mapping_t &mapping) {
       char intClient[16];
@@ -190,27 +172,21 @@ namespace upnp {
       char leaseDuration[16];
       bool indefinite = false;
 
-      // First check if this port is already mapped successfully
       BOOST_LOG(debug) << "Checking for existing UPnP port mapping for "sv << mapping.port.wan;
       auto err = UPNP_GetSpecificPortMappingEntry(
         urls->controlURL,
         data.first.servicetype,
-        // In params
         mapping.port.wan.c_str(),
         mapping.port.proto.c_str(),
         nullptr,
-        // Out params
         intClient, intPort, desc, enabled, leaseDuration);
-      if (err == 714) {  // NoSuchEntryInArray
+      if (err == 714) {
         BOOST_LOG(debug) << "Mapping entry not found for "sv << mapping.port.wan;
       }
       else if (err == UPNPCOMMAND_SUCCESS) {
-        // Some routers change the description, so we can't check that here
         if (!std::strcmp(intClient, lan_addr.c_str())) {
           if (std::atoi(leaseDuration) == 0) {
             BOOST_LOG(debug) << "Static mapping entry found for "sv << mapping.port.wan;
-
-            // It's a static mapping, so we're done here
             return true;
           }
           else {
@@ -220,8 +196,6 @@ namespace upnp {
         else {
           BOOST_LOG(warning) << "UPnP conflict detected with: "sv << intClient;
 
-          // Some UPnP IGDs won't let unauthenticated clients delete other conflicting port mappings
-          // for security reasons, but we will give it a try anyway.
           err = UPNP_DeletePortMapping(
             urls->controlURL,
             data.first.servicetype,
@@ -237,14 +211,11 @@ namespace upnp {
       else {
         BOOST_LOG(error) << "UPNP_GetSpecificPortMappingEntry() failed: "sv << err;
 
-        // If we get a strange error from the router, we'll assume it's some old broken IGDv1
-        // device and only use indefinite lease durations to hopefully avoid confusing it.
-        if (err != 606) {  // Unauthorized
+        if (err != 606) {
           indefinite = true;
         }
       }
 
-      // Add/update the port mapping
       auto mapping_period = std::to_string(indefinite ? 0 : PORT_MAPPING_LIFETIME.count());
       err = UPNP_AddPortMapping(
         urls->controlURL,
@@ -258,7 +229,6 @@ namespace upnp {
         mapping_period.c_str());
 
       if (err != UPNPCOMMAND_SUCCESS && !indefinite) {
-        // This may be an old/broken IGD that doesn't like non-static mappings.
         BOOST_LOG(debug) << "Trying static mapping after failure: "sv << err;
         err = UPNP_AddPortMapping(
           urls->controlURL,
@@ -281,11 +251,6 @@ namespace upnp {
       return true;
     }
 
-    /**
-     * @brief Unmaps all ports.
-     * @param data IGDdatas from UPNP_GetValidIGD()
-     * @param data urls_t from UPNP_GetValidIGD()
-     */
     void
     unmap_all_upnp_ports(const urls_t &urls, const IGDdatas &data) {
       for (auto it = std::begin(mappings); it != std::end(mappings); ++it) {
@@ -296,7 +261,7 @@ namespace upnp {
           it->port.proto.c_str(),
           nullptr);
 
-        if (status && status != 714) {  // NoSuchEntryInArray
+        if (status && status != 714) {
           BOOST_LOG(warning) << "Failed to unmap "sv << it->port.proto << ' ' << it->port.lan << ": "sv << status;
         }
         else {
@@ -305,9 +270,6 @@ namespace upnp {
       }
     }
 
-    /**
-     * @brief Maintains UPnP port forwarding rules
-     */
     void
     upnp_thread_proc() {
       auto shutdown_event = mail::man->event<bool>(mail::shutdown);
@@ -316,8 +278,6 @@ namespace upnp {
       urls_t mapped_urls;
       auto address_family = net::af_from_enum_string(config::sunshine.address_family);
 
-      // Refresh UPnP rules every few minutes. They can be lost if the router reboots,
-      // WAN IP address changes, or various other conditions.
       do {
         int err = 0;
         device_t device { upnpDiscover(2000, nullptr, nullptr, 0, IPv4, 2, &err) };
@@ -332,10 +292,10 @@ namespace upnp {
         }
 
         std::array<char, INET6_ADDRESS_STRLEN> lan_addr;
-
         urls_t urls;
-        // 修改：补充 UPNP_GetValidIGD 第6、7个参数（descURL 及长度）
-        auto status = UPNP_GetValidIGD(device.get(), &urls.el, &data, lan_addr.data(), lan_addr.size(), "", 0);
+        // 关键修改：用字符数组替代字符串常量，适配 char* 参数
+        char desc_url[] = "";  // 可修改的空字符数组
+        auto status = UPNP_GetValidIGD(device.get(), &urls.el, &data, lan_addr.data(), lan_addr.size(), desc_url, 0);
         if (status != 1 && status != 2) {
           BOOST_LOG(error) << status_string(status);
           mapped = false;
@@ -354,10 +314,8 @@ namespace upnp {
           BOOST_LOG(info) << "Completed UPnP port mappings to "sv << lan_addr_str << " via "sv << urls->rootdescURL;
         }
 
-        // If we are listening on IPv6 and the IGD has an IPv6 firewall enabled, try to create IPv6 firewall pinholes
         if (address_family == net::af_e::BOTH) {
           if (create_ipv6_pinholes() && !mapped) {
-            // Only log the first time through
             BOOST_LOG(info) << "Successfully opened IPv6 pinholes on the IGD"sv;
           }
         }
@@ -367,7 +325,6 @@ namespace upnp {
       } while (!shutdown_event->view(REFRESH_INTERVAL));
 
       if (mapped) {
-        // Unmap ports upon termination
         BOOST_LOG(info) << "Unmapping UPNP ports..."sv;
         unmap_all_upnp_ports(mapped_urls, data);
       }
