@@ -1,5 +1,5 @@
 /**
- * @file src/rstp.cpp
+ * @file src/rtsp.cpp
  * @brief todo
  */
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
@@ -11,6 +11,7 @@ extern "C" {
 
 #include <array>
 #include <cctype>
+#include <sstream>
 
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
@@ -90,7 +91,8 @@ namespace rtsp_stream {
 
   class socket_t: public std::enable_shared_from_this<socket_t> {
   public:
-    socket_t(boost::asio::io_service &ios, std::function<void(tcp::socket &sock, launch_session_t &, msg_t &&)> &&handle_data_fn):
+    // 关键修改1：构造函数参数 io_service → io_context（适配boost::asio 1.66+ API）
+    socket_t(boost::asio::io_context &ios, std::function<void(tcp::socket &sock, launch_session_t &, msg_t &&)> &&handle_data_fn):
         handle_data_fn { std::move(handle_data_fn) }, sock { ios } {}
 
     /**
@@ -440,6 +442,7 @@ namespace rtsp_stream {
         return -1;
       }
 
+      // 此处传递的 ios 已改为 io_context 类型，与 socket_t 构造函数参数匹配
       next_socket = std::make_shared<socket_t>(ios, [this](tcp::socket &sock, launch_session_t &session, msg_t &&msg) {
         handle_msg(sock, session, std::move(msg));
       });
@@ -454,7 +457,7 @@ namespace rtsp_stream {
     template <class T, class X>
     void
     iterate(std::chrono::duration<T, X> timeout) {
-      ios.run_one_for(timeout);
+      ios.run_one_for(timeout);  // io_context 兼容 run_one_for 方法
     }
 
     void
@@ -591,8 +594,8 @@ namespace rtsp_stream {
         }
       }
 
-      if (all && !ios.stopped()) {
-        ios.stop();
+      if (all && !ios.stopped()) {  // io_context 兼容 stopped() 方法
+        ios.stop();  // io_context 兼容 stop() 方法
       }
     }
 
@@ -627,8 +630,9 @@ namespace rtsp_stream {
     std::chrono::steady_clock::time_point raised_timeout;
     int _slot_count;
 
-    boost::asio::io_service ios;
-    tcp::acceptor acceptor { ios };
+    // 关键修改2：成员变量 io_service → io_context（boost::asio 1.66+ 推荐替代类型）
+    boost::asio::io_context ios;
+    tcp::acceptor acceptor { ios };  // io_context 可直接初始化 tcp::acceptor
 
     std::shared_ptr<socket_t> next_socket;
   };
@@ -1087,7 +1091,7 @@ namespace rtsp_stream {
 
     auto slot = server->accept(stream_session);
     if (!slot) {
-      BOOST_LOG(info) << "Ran out of slots for client from ["sv << ']';
+      BOOST_LOG(info) << "Ran out of slots for client from ["sv << sock.remote_endpoint().address().to_string() << ']';
 
       respond(sock, session, &option, 503, "Service Unavailable", req->sequenceNumber, {});
       return;
