@@ -4,6 +4,11 @@
  */
 #pragma once
 
+// 新增：解决 WinSock2.h 与 Windows.h 包含顺序冲突
+#define WIN32_LEAN_AND_MEAN
+#include <winsock2.h>
+#include <windows.h>
+
 #include <bitset>
 #include <filesystem>
 #include <functional>
@@ -17,6 +22,11 @@
 #include "src/utility.h"
 #include "src/video_colorspace.h"
 
+// 新增：包含 boost::process 完整头文件，替换前向声明（解决类型不完整问题）
+#include <boost/process/child.hpp>
+#include <boost/process/group.hpp>
+#include <boost/process/environment.hpp>
+
 extern "C" {
 #include <moonlight-common-c/src/Limelight.h>
 }
@@ -28,8 +38,7 @@ struct AVFrame;
 struct AVBufferRef;
 struct AVHWFramesContext;
 
-// Forward declarations of boost classes to avoid having to include boost headers
-// here, which results in issues with Windows.h and WinSock2.h include order.
+// 仅保留非 boost::process 相关的前向声明，删除 boost::process 前向声明
 namespace boost {
   namespace asio {
     namespace ip {
@@ -39,13 +48,6 @@ namespace boost {
   namespace filesystem {
     class path;
   }
-  namespace process {
-    class child;
-    class group;
-    template <typename Char>
-    class basic_environment;
-    typedef basic_environment<char> environment;
-  }  // namespace process
 }  // namespace boost
 namespace video {
   struct config_t;
@@ -585,8 +587,12 @@ namespace platf {
   bool
   needs_encoder_reenumeration();
 
+  // 关键修改1：typedef 重命名，避免与 boost::process::v2::environment 命名冲突
+  typedef boost::process::basic_environment<char> process_environment;
+
+  // 关键修改2：函数参数中的 environment 改为 process_environment，适配重命名
   boost::process::child
-  run_command(bool elevated, bool interactive, const std::string &cmd, boost::filesystem::path &working_dir, const boost::process::environment &env, FILE *file, std::error_code &ec, boost::process::group *group);
+  run_command(bool elevated, bool interactive, const std::string &cmd, boost::filesystem::path &working_dir, const boost::process::process_environment &env, FILE *file, std::error_code &ec, boost::process::group *group);
 
   enum class thread_priority_e : int {
     low,
