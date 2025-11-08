@@ -2,6 +2,7 @@
  * @file src/upnp.cpp
  * @brief todo
  */
+#include <cstddef>  // 新增：解决 size_t 未声明问题
 #include <miniupnpc/miniupnpc.h>
 #include <miniupnpc/upnpcommands.h>
 
@@ -43,7 +44,8 @@ namespace upnp {
     std::string description;
   };
 
-  static std::string_view
+  // 新增 [[maybe_unused]]：忽略未使用函数警告
+  [[maybe_unused]] static std::string_view
   status_string(int status) {
     switch (status) {
       case 0:
@@ -109,7 +111,8 @@ namespace upnp {
       IGDdatas data;
       urls_t urls;
       std::array<char, INET6_ADDRESS_STRLEN> lan_addr;
-      auto status = UPNP_GetValidIGD(device.get(), &urls.el, &data, lan_addr.data(), lan_addr.size());
+      // 修改：补充 UPNP_GetValidIGD 第6、7个参数（descURL 及长度）
+      auto status = UPNP_GetValidIGD(device.get(), &urls.el, &data, lan_addr.data(), lan_addr.size(), "", 0);
       if (status != 1 && status != 2) {
         BOOST_LOG(debug) << "No valid IPv6 IGD: "sv << status_string(status);
         return false;
@@ -331,7 +334,8 @@ namespace upnp {
         std::array<char, INET6_ADDRESS_STRLEN> lan_addr;
 
         urls_t urls;
-        auto status = UPNP_GetValidIGD(device.get(), &urls.el, &data, lan_addr.data(), lan_addr.size());
+        // 修改：补充 UPNP_GetValidIGD 第6、7个参数（descURL 及长度）
+        auto status = UPNP_GetValidIGD(device.get(), &urls.el, &data, lan_addr.data(), lan_addr.size(), "", 0);
         if (status != 1 && status != 2) {
           BOOST_LOG(error) << status_string(status);
           mapped = false;
