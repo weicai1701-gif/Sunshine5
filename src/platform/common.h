@@ -4,7 +4,7 @@
  */
 #pragma once
 
-// 新增：解决 WinSock2.h 与 Windows.h 包含顺序冲突
+// 解决 WinSock2.h 与 Windows.h 包含顺序冲突
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <windows.h>
@@ -22,8 +22,10 @@
 #include "src/utility.h"
 #include "src/video_colorspace.h"
 
-// 关键修改：替换单独组件头文件为兼容头文件（boost/process.hpp 包含 child/group/environment）
-#include <boost/process.hpp>
+// 关键修改：单独包含 Boost.Process 核心头文件（确保类型定义被正确引入）
+#include <boost/process/environment.hpp>
+#include <boost/process/child.hpp>
+#include <boost/process/group.hpp>
 
 extern "C" {
 #include <moonlight-common-c/src/Limelight.h>
@@ -498,10 +500,11 @@ namespace platf {
   bool
   needs_encoder_reenumeration();
 
-  // typedef 重命名，避免与 boost::process::v2::environment 命名冲突
-  typedef boost::process::basic_environment<char> process_environment;
+  // 关键修改1：直接使用 Boost 预定义的 environment 类型（已是 basic_environment<char> 的别名）
+  // 避免手动引用 basic_environment 导致的类型未定义错误
+  typedef boost::process::environment process_environment;
 
-  // 函数参数使用重命名后的类型
+  // 关键修改2：函数返回值和参数使用正确的 Boost.Process 类型
   boost::process::child
   run_command(bool elevated, bool interactive, const std::string &cmd, boost::filesystem::path &working_dir, const boost::process::process_environment &env, FILE *file, std::error_code &ec, boost::process::group *group);
 
