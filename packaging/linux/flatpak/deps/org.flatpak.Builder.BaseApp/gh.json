@@ -1,0 +1,37 @@
+{
+    "name": "gh",
+    "buildsystem": "simple",
+    "build-commands": [
+        "install -Dm755 bin/gh ${FLATPAK_DEST}/bin/gh"
+    ],
+    "sources": [
+        {
+            "type": "archive",
+            "sha256": "1c477e2562aca8679b0219569f0482f1975de76daca8ba307892c1787338a28d",
+            "url": "https://github.com/cli/cli/releases/download/v2.48.0/gh_2.48.0_linux_amd64.tar.gz",
+            "only-arches": [
+                "x86_64"
+            ],
+            "x-checker-data": {
+                "type": "json",
+                "url": "https://api.github.com/repos/cli/cli/releases/latest",
+                "url-query": ".assets[] | select(.name==\"gh_\" + $version + \"_linux_amd64.tar.gz\") | .browser_download_url",
+                "version-query": ".tag_name | sub(\"^v\"; \"\")"
+            }
+        },
+        {
+            "type": "archive",
+            "sha256": "aceeaa1c3d350faeb7f4d4f41821e4d08197fb0b37808a7020f502870bad49a3",
+            "url": "https://github.com/cli/cli/releases/download/v2.48.0/gh_2.48.0_linux_arm64.tar.gz",
+            "only-arches": [
+                "aarch64"
+            ],
+            "x-checker-data": {
+                "type": "json",
+                "url": "https://api.github.com/repos/cli/cli/releases/latest",
+                "url-query": ".assets[] | select(.name==\"gh_\" + $version + \"_linux_arm64.tar.gz\") | .browser_download_url",
+                "version-query": ".tag_name | sub(\"^v\"; \"\")"
+            }
+        }
+    ]
+}
