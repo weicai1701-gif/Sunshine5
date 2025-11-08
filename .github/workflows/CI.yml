@@ -31,7 +31,7 @@ jobs:
     steps:
       - name: Checkout
         if: ${{ github.ref == 'refs/heads/master' || github.base_ref == 'master' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Verify Changelog
         id: verify_changelog
@@ -53,7 +53,7 @@ jobs:
     if: false  # 禁用版本校验（依赖Changelog）
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Check CMakeLists.txt Version
         run: |
@@ -169,7 +169,7 @@ jobs:
           remove-docker-images: 'true'
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -296,7 +296,7 @@ jobs:
           remove-docker-images: 'true'
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -532,7 +532,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Dependencies Homebrew
         run: |
@@ -626,17 +626,17 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Checkout ports
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: macports/macports-ports
           fetch-depth: 64
           path: ports
 
       - name: Checkout mpbb
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: macports/mpbb
           path: mpbb
@@ -839,7 +839,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
 
