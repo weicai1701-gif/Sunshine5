@@ -18,7 +18,7 @@ target_link_libraries(audio-info
         ${CMAKE_THREAD_LIBS_INIT}
         ksuser
         ${PLATFORM_LIBRARIES})
-# 仅在此处添加了 -Wno-deprecated-declarations，忽略 std::wstring_convert 废弃警告
+# 忽略 audio.cpp 中 std::wstring_convert 废弃警告
 target_compile_options(audio-info PRIVATE ${SUNSHINE_COMPILE_OPTIONS} -Wno-deprecated-declarations)
 
 add_executable(sunshinesvc sunshinesvc.cpp)
@@ -36,4 +36,5 @@ target_link_libraries(ddprobe
         dxgi
         d3d11
         ${PLATFORM_LIBRARIES})
-target_compile_options(ddprobe PRIVATE ${SUNSHINE_COMPILE_OPTIONS})
+# 新增：忽略 ddprobe.cpp 中 std::wstring_convert 废弃警告
+target_compile_options(ddprobe PRIVATE ${SUNSHINE_COMPILE_OPTIONS} -Wno-deprecated-declarations)
