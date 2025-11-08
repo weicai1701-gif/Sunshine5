@@ -18,7 +18,8 @@ target_link_libraries(audio-info
         ${CMAKE_THREAD_LIBS_INIT}
         ksuser
         ${PLATFORM_LIBRARIES})
-target_compile_options(audio-info PRIVATE ${SUNSHINE_COMPILE_OPTIONS})
+# 仅在此处添加了 -Wno-deprecated-declarations，忽略 std::wstring_convert 废弃警告
+target_compile_options(audio-info PRIVATE ${SUNSHINE_COMPILE_OPTIONS} -Wno-deprecated-declarations)
 
 add_executable(sunshinesvc sunshinesvc.cpp)
 set_target_properties(sunshinesvc PROPERTIES CXX_STANDARD 17)
