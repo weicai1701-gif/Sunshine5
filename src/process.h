@@ -14,7 +14,7 @@
 #include <boost/process.hpp>
 
 #include "config.h"
-#include "platform/common.h"
+#include "platform/common.h"  // 已修改为使用 process_environment
 #include "rtsp.h"
 #include "utility.h"
 
@@ -67,8 +67,9 @@ namespace proc {
   public:
     KITTY_DEFAULT_CONSTR_MOVE_THROW(proc_t)
 
+    // 关键修改1：构造函数参数的 environment 改为 process_environment
     proc_t(
-      boost::process::environment &&env,
+      boost::process::process_environment &&env,
       std::vector<ctx_t> &&apps):
         _app_id(0),
         _env(std::move(env)),
@@ -99,7 +100,8 @@ namespace proc {
   private:
     int _app_id;
 
-    boost::process::environment _env;
+    // 关键修改2：成员变量的 environment 改为 process_environment
+    boost::process::process_environment _env;
     std::vector<ctx_t> _apps;
     ctx_t _app;
     std::chrono::steady_clock::time_point _app_launch_time;
@@ -107,6 +109,7 @@ namespace proc {
     // If no command associated with _app_id, yet it's still running
     bool placebo {};
 
+    // 已通过 common.h 包含完整头文件，类型声明有效
     boost::process::child _process;
     boost::process::group _process_group;
 
